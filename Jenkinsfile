@@ -4,6 +4,8 @@ pipeline {
   environment {
     AWS_REGION = "ap-southeast-2"
     ECR_REPO = "730335329548.dkr.ecr.ap-southeast-2.amazonaws.com/translator-api"
+    ECS_CLUSTER = "translator-cluster"
+    ECS_SERVICE = "translator-service"
   }
 
   stages {
@@ -16,8 +18,8 @@ pipeline {
     stage('Build Docker Image') {
       steps {
         script {
-          IMAGE_TAG = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-          env.IMAGE_TAG = IMAGE_TAG
+          def imageTag = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+          env.IMAGE_TAG = imageTag
           sh "docker build -t translator-api:${IMAGE_TAG} ."
         }
       }
@@ -35,19 +37,16 @@ pipeline {
       }
     }
 
-    stage('Terraform Apply') {
+    stage('Deploy to ECS') {
       steps {
-        dir('terraform') {
-          withCredentials([
-            file(credentialsId: 'aws-creds', variable: 'AWS_CREDS'),
-            file(credentialsId: 'ifa-env-file', variable: 'ENV_FILE')
-          ]) {
-            sh """
-              export AWS_SHARED_CREDENTIALS_FILE=$AWS_CREDS
-              terraform init
-              terraform apply -auto-approve -var='image_tag=${IMAGE_TAG}'
-            """
-          }
+        script {
+          sh """
+            aws ecs update-service \
+              --cluster $ECS_CLUSTER \
+              --service $ECS_SERVICE \
+              --force-new-deployment \
+              --region $AWS_REGION
+          """
         }
       }
     }
